@@ -1,7 +1,11 @@
 package simpledb.execution;
 
 import simpledb.common.Type;
+import simpledb.storage.Field;
 import simpledb.storage.Tuple;
+import simpledb.storage.TupleDesc;
+
+import java.util.HashMap;
 
 /**
  * Knows how to compute some aggregate over a set of StringFields.
@@ -9,7 +13,12 @@ import simpledb.storage.Tuple;
 public class StringAggregator implements Aggregator {
 
     private static final long serialVersionUID = 1L;
-
+    private TupleDesc Td;
+    private final int gbfield;
+    private final Type gbfieldtype;
+    private final int afield;
+    private final Op what;
+    private final HashMap<Field, String> groupMap;
     /**
      * Aggregate constructor
      * @param gbfield the 0-based index of the group-by field in the tuple, or NO_GROUPING if there is no grouping
@@ -18,9 +27,17 @@ public class StringAggregator implements Aggregator {
      * @param what aggregation operator to use -- only supports COUNT
      * @throws IllegalArgumentException if what != COUNT
      */
-
     public StringAggregator(int gbfield, Type gbfieldtype, int afield, Op what) {
-        // some code goes here
+        this.gbfield = gbfield;
+        this.gbfieldtype = gbfieldtype;
+        this.afield = afield;
+        this.what = what;
+        if (what != Op.COUNT)
+            throw new IllegalArgumentException("Only support COUNT for String Type");
+        this.Td = gbfield == NO_GROUPING ?
+                new TupleDesc(new Type[] {Type.STRING_TYPE}, new String[] {"aggrVal"}) :
+                new TupleDesc(new Type[] {gbfieldtype, Type.STRING_TYPE}, new String[] {"groupVal", "aggrVal"});
+        groupMap = new HashMap<>();
     }
 
     /**
@@ -42,6 +59,11 @@ public class StringAggregator implements Aggregator {
     public OpIterator iterator() {
         // some code goes here
         throw new UnsupportedOperationException("please implement me for lab2");
+    }
+
+    @Override
+    public TupleDesc getTupleDesc() {
+        return Td;
     }
 
 }

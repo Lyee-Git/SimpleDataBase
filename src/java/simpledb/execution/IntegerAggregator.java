@@ -1,7 +1,10 @@
 package simpledb.execution;
 
 import simpledb.common.Type;
-import simpledb.storage.Tuple;
+import simpledb.storage.*;
+
+import java.util.ArrayList;
+import java.util.HashMap;
 
 /**
  * Knows how to compute some aggregate over a set of IntFields.
@@ -9,7 +12,13 @@ import simpledb.storage.Tuple;
 public class IntegerAggregator implements Aggregator {
 
     private static final long serialVersionUID = 1L;
-
+    private final int gbfield;
+    private final Type gbfieldtype;
+    private final int afield;
+    private final Op what;
+    private final TupleDesc Td;
+    private final HashMap<Field, Integer> groupMap;
+    private final HashMap<Field, ArrayList<Integer>> avgMap;
     /**
      * Aggregate constructor
      * 
@@ -26,7 +35,15 @@ public class IntegerAggregator implements Aggregator {
      */
 
     public IntegerAggregator(int gbfield, Type gbfieldtype, int afield, Op what) {
-        // some code goes here
+        this.gbfield = gbfield;
+        this.gbfieldtype = gbfieldtype;
+        this.afield = afield;
+        this.what = what;
+        this.Td = gbfield == NO_GROUPING ?
+                new TupleDesc(new Type[] {Type.INT_TYPE}, new String[] {"aggrVal"}) :
+                new TupleDesc(new Type[] {gbfieldtype, Type.INT_TYPE}, new String[] {"groupVal", "aggrVal"});
+        this.groupMap = new HashMap<>();
+        this.avgMap = new HashMap<>();
     }
 
     /**
@@ -37,7 +54,20 @@ public class IntegerAggregator implements Aggregator {
      *            the Tuple containing an aggregate field and a group-by field
      */
     public void mergeTupleIntoGroup(Tuple tup) {
-        // some code goes here
+        IntField aFd = (IntField) tup.getField(afield);
+        int aggrVal = aFd.getValue();
+        IntField gbFd = gbfield == NO_GROUPING ? null : (IntField) tup.getField(gbfield);
+        // check for group field type
+        if (gbFd != null && gbFd.getType() != this.gbfieldtype)
+            throw new IllegalArgumentException("Wrong group field Type");
+        switch (what) {
+            case MAX -> groupMap.put(gbFd, Math.max(groupMap.getOrDefault(gbFd, aggrVal), aggrVal)); // default:aggrVal
+            case MIN -> groupMap.put(gbFd, Math.min(groupMap.getOrDefault(gbFd, aggrVal), aggrVal));
+            case SUM -> groupMap.put(gbFd, groupMap.getOrDefault(gbFd, 0) + aggrVal);
+            case COUNT -> groupMap.put(gbFd, groupMap.getOrDefault(gbFd, 0) + 1);
+            case AVG -> avgMap.getOrDefault(gbFd, new ArrayList<Integer>()).add(aggrVal);
+            default -> throw new IllegalArgumentException("Unimplemented aggregate Operator");
+        }
     }
 
     /**
@@ -49,9 +79,44 @@ public class IntegerAggregator implements Aggregator {
      *         the constructor.
      */
     public OpIterator iterator() {
-        // some code goes here
-        throw new
-        UnsupportedOperationException("please implement me for lab2");
+        ArrayList<Tuple> Tuples = new ArrayList<>();
+        if (what == Op.AVG) {
+            Tuple tuple = new Tuple(Td);
+            for (Field f : groupMap.keySet()) {
+                ArrayList<Integer> valList = avgMap.get(f);
+                int sum = 0;
+                for (int val : valList)
+                    sum += val;
+                if (gbfield == NO_GROUPING) {
+                    tuple.setField(0, new IntField(sum / valList.size()));
+                }
+                else {
+                    tuple.setField(0, f);
+                    tuple.setField(1, new IntField(sum / valList.size()));
+                }
+                Tuples.add(tuple);
+            }
+        }
+        else {
+            Tuple tuple = new Tuple(Td);
+            for (Field f : groupMap.keySet()) {
+                int val = groupMap.get(f);
+                if (gbfield == NO_GROUPING) {
+                    tuple.setField(0, new IntField(val));
+                }
+                else {
+                    tuple.setField(0, f);
+                    tuple.setField(1, new IntField(val));
+                }
+                Tuples.add(tuple);
+            }
+        }
+        return new TupleIterator(Td, Tuples);
+    }
+
+    @Override
+    public TupleDesc getTupleDesc() {
+        return Td;
     }
 
 }
