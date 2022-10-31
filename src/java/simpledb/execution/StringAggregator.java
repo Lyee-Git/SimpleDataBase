@@ -1,10 +1,9 @@
 package simpledb.execution;
 
 import simpledb.common.Type;
-import simpledb.storage.Field;
-import simpledb.storage.Tuple;
-import simpledb.storage.TupleDesc;
+import simpledb.storage.*;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 
 /**
@@ -18,7 +17,7 @@ public class StringAggregator implements Aggregator {
     private final Type gbfieldtype;
     private final int afield;
     private final Op what;
-    private final HashMap<Field, String> groupMap;
+    private final HashMap<Field, Integer> groupMap;
     /**
      * Aggregate constructor
      * @param gbfield the 0-based index of the group-by field in the tuple, or NO_GROUPING if there is no grouping
@@ -35,8 +34,8 @@ public class StringAggregator implements Aggregator {
         if (what != Op.COUNT)
             throw new IllegalArgumentException("Only support COUNT for String Type");
         this.Td = gbfield == NO_GROUPING ?
-                new TupleDesc(new Type[] {Type.STRING_TYPE}, new String[] {"aggrVal"}) :
-                new TupleDesc(new Type[] {gbfieldtype, Type.STRING_TYPE}, new String[] {"groupVal", "aggrVal"});
+                new TupleDesc(new Type[] {Type.INT_TYPE}, new String[] {"aggrVal"}) :
+                new TupleDesc(new Type[] {gbfieldtype, Type.INT_TYPE}, new String[] {"groupVal", "aggrVal"});
         groupMap = new HashMap<>();
     }
 
@@ -45,7 +44,15 @@ public class StringAggregator implements Aggregator {
      * @param tup the Tuple containing an aggregate field and a group-by field
      */
     public void mergeTupleIntoGroup(Tuple tup) {
-        // some code goes here
+        StringField aFd = (StringField) tup.getField(afield);
+        String aggrVal = aFd.getValue();
+        Field gbFd = gbfield == NO_GROUPING ? null : tup.getField(gbfield);
+        if (gbFd != null && gbFd.getType() != this.gbfieldtype)
+            throw new IllegalArgumentException("Wrong group field Type");
+        switch (what) {
+            case COUNT -> groupMap.put(gbFd, groupMap.getOrDefault(gbFd, 0) + 1);
+            default -> throw new IllegalArgumentException("Unimplemented aggregate Operator");
+        }
     }
 
     /**
@@ -57,8 +64,20 @@ public class StringAggregator implements Aggregator {
      *   aggregate specified in the constructor.
      */
     public OpIterator iterator() {
-        // some code goes here
-        throw new UnsupportedOperationException("please implement me for lab2");
+        ArrayList<Tuple> Tuples= new ArrayList<>();
+        for (Field f : groupMap.keySet()) {
+            Tuple tuple = new Tuple(Td);
+            int val = groupMap.get(f);
+            if (gbfield == NO_GROUPING) {
+                tuple.setField(0, new IntField(val));
+            }
+            else {
+                tuple.setField(0, f);
+                tuple.setField(1, new IntField(val));
+            }
+            Tuples.add(tuple);
+        }
+        return new TupleIterator(Td, Tuples);
     }
 
     @Override

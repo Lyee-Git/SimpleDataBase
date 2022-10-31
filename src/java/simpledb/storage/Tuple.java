@@ -84,8 +84,10 @@ public class Tuple implements Serializable {
      */
     public String toString() {
         String res = "";
-        for (Field fd : Fields)
-            res += fd.toString() + " ";
+        for (Field fd : Fields) {
+            if (fd != null)
+                res += fd.toString() + " ";
+        }
         return res;
     }
 

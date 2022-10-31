@@ -22,7 +22,8 @@ public class Aggregate extends Operator {
     private final int afield;
     private final int gfield;
     private final Aggregator.Op aop;
-    private final Aggregator aggregator;
+    private Aggregator aggregator;
+    private OpIterator it;
     private TupleDesc Td;
 
     /**
@@ -98,8 +99,14 @@ public class Aggregate extends Operator {
 
     public void open() throws NoSuchElementException, DbException,
             TransactionAbortedException {
-        child.open();
         super.open();
+        child.open();
+        while (child.hasNext()) {
+            Tuple t = child.next();
+            aggregator.mergeTupleIntoGroup(t);
+        }
+        it = aggregator.iterator();
+        it.open();
     }
 
     /**
@@ -110,7 +117,6 @@ public class Aggregate extends Operator {
      * aggregate. Should return null if there are no more tuples.
      */
     protected Tuple fetchNext() throws TransactionAbortedException, DbException {
-        OpIterator it = aggregator.iterator();
         if (it == null)
             throw new DbException("Invalid Iterator");
         if (it.hasNext())
@@ -119,8 +125,8 @@ public class Aggregate extends Operator {
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
-        this.close();
-        this.open();
+        child.rewind();
+        it.rewind();
     }
 
     /**
@@ -141,6 +147,7 @@ public class Aggregate extends Operator {
     public void close() {
         child.close();
         super.close();
+        it.close();
     }
 
     @Override

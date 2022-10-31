@@ -54,9 +54,10 @@ public class IntegerAggregator implements Aggregator {
      *            the Tuple containing an aggregate field and a group-by field
      */
     public void mergeTupleIntoGroup(Tuple tup) {
+        // get aggregate field & group by field
         IntField aFd = (IntField) tup.getField(afield);
         int aggrVal = aFd.getValue();
-        IntField gbFd = gbfield == NO_GROUPING ? null : (IntField) tup.getField(gbfield);
+        Field gbFd = gbfield == NO_GROUPING ? null : tup.getField(gbfield);
         // check for group field type
         if (gbFd != null && gbFd.getType() != this.gbfieldtype)
             throw new IllegalArgumentException("Wrong group field Type");
@@ -65,7 +66,16 @@ public class IntegerAggregator implements Aggregator {
             case MIN -> groupMap.put(gbFd, Math.min(groupMap.getOrDefault(gbFd, aggrVal), aggrVal));
             case SUM -> groupMap.put(gbFd, groupMap.getOrDefault(gbFd, 0) + aggrVal);
             case COUNT -> groupMap.put(gbFd, groupMap.getOrDefault(gbFd, 0) + 1);
-            case AVG -> avgMap.getOrDefault(gbFd, new ArrayList<Integer>()).add(aggrVal);
+            case AVG -> {
+                if (avgMap.containsKey(gbFd)) {
+                    avgMap.get(gbFd).add(aggrVal);
+                }
+                else {
+                    ArrayList<Integer> array = new ArrayList<>();
+                    array.add(aggrVal);
+                    avgMap.put(gbFd, array);
+                }
+            }
             default -> throw new IllegalArgumentException("Unimplemented aggregate Operator");
         }
     }
@@ -81,8 +91,8 @@ public class IntegerAggregator implements Aggregator {
     public OpIterator iterator() {
         ArrayList<Tuple> Tuples = new ArrayList<>();
         if (what == Op.AVG) {
-            Tuple tuple = new Tuple(Td);
-            for (Field f : groupMap.keySet()) {
+            for (Field f : avgMap.keySet()) {
+                Tuple tuple = new Tuple(Td);
                 ArrayList<Integer> valList = avgMap.get(f);
                 int sum = 0;
                 for (int val : valList)
@@ -98,8 +108,8 @@ public class IntegerAggregator implements Aggregator {
             }
         }
         else {
-            Tuple tuple = new Tuple(Td);
             for (Field f : groupMap.keySet()) {
+                Tuple tuple = new Tuple(Td);
                 int val = groupMap.get(f);
                 if (gbfield == NO_GROUPING) {
                     tuple.setField(0, new IntField(val));
