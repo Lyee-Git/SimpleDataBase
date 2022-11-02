@@ -10,6 +10,7 @@ import simpledb.transaction.TransactionId;
 import java.io.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -82,6 +83,7 @@ public class BufferPool {
         Page res;
         if (!idToPage.containsKey(pid)) {
             if (idToPage.size() < numPages) {
+                // read page from disk and load it to BufferPool
                 DbFile df = Database.getCatalog().getDatabaseFile(pid.getTableId());
                 res = df.readPage(pid);
                 idToPage.put(pid, res);
@@ -153,8 +155,14 @@ public class BufferPool {
      */
     public void insertTuple(TransactionId tid, int tableId, Tuple t)
         throws DbException, IOException, TransactionAbortedException {
-        // some code goes here
-        // not necessary for lab1
+        // BufferPool calls -> HeapFile.insertPage() -> HeapPage.insertPage
+        DbFile dbFile = Database.getCatalog().getDatabaseFile(tableId);
+        List<Page> Pages= dbFile.insertTuple(tid,t);
+        // Handle dirty pages: Cache them in BufferPool
+        for (Page page : Pages) {
+            page.markDirty(true, tid);
+            this.idToPage.put(page.getId(), page);
+        }
     }
 
     /**
@@ -172,8 +180,14 @@ public class BufferPool {
      */
     public  void deleteTuple(TransactionId tid, Tuple t)
         throws DbException, IOException, TransactionAbortedException {
-        // some code goes here
-        // not necessary for lab1
+        // For deletion, we could obtain tableId from tuple cause it's already set
+        DbFile dbFile = Database.getCatalog().getDatabaseFile(t.getRecordId().getPageId().getTableId());
+        List<Page> Pages= dbFile.deleteTuple(tid, t);
+        // Handle dirty pages: Cache them in BufferPool
+        for (Page page : Pages) {
+            page.markDirty(true, tid);
+            this.idToPage.put(page.getId(), page);
+        }
     }
 
     /**

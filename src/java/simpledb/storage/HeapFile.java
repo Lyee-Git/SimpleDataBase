@@ -116,20 +116,56 @@ public class HeapFile implements DbFile {
         return (int) (f.length() / BufferPool.getPageSize());
     }
 
-    // see DbFile.java for javadocs
+    /**
+     * Inserts the specified tuple to the file on behalf of transaction.
+     * This method will acquire a lock on the affected pages of the file, and
+     * may block until the lock can be acquired.
+     *
+     * @param tid The transaction performing the update
+     * @param t The tuple to add.  This tuple should be updated to reflect that
+     *          it is now stored in this file.
+     * @return An ArrayList contain the pages that were modified
+     * @throws DbException if the tuple cannot be added
+     * @throws IOException if the needed file can't be read/written
+     */
     public List<Page> insertTuple(TransactionId tid, Tuple t)
             throws DbException, IOException, TransactionAbortedException {
-        // some code goes here
-        return null;
-        // not necessary for lab1
+        ArrayList<Page> Pages= new ArrayList<>();
+        for (int i = 0; i < numPages(); i++) {
+            PageId pid = new HeapPageId(this.getId(), i);
+            HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, pid, Permissions.READ_WRITE);
+            if (page.getNumEmptySlots() == 0)
+                continue;
+            else {
+                page.insertTuple(t);
+                Pages.add(page);
+                return Pages;
+            }
+        }
+        //  If no such pages exist in the HeapFile,
+        //  create a new page and append it to the physical file on disk
+        BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(this.f, true)); // write to the end
+        byte[] newPage = HeapPage.createEmptyPageData();
+        bos.write(newPage);
+        bos.close(); // When not already closed, the close method of FilterOutputStream calls its flush method
+        HeapPageId pid = new HeapPageId(this.getId(), numPages() - 1);
+        HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, pid, Permissions.READ_WRITE);
+        page.insertTuple(t);
+        Pages.add(page);
+        return Pages;
     }
 
     // see DbFile.java for javadocs
     public ArrayList<Page> deleteTuple(TransactionId tid, Tuple t) throws DbException,
             TransactionAbortedException {
-        // some code goes here
-        return null;
-        // not necessary for lab1
+        ArrayList<Page> Pages = new ArrayList<>();
+        PageId pid = t.getRecordId().getPageId();
+        HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, pid, Permissions.READ_WRITE);
+        if (page == null)
+            throw new DbException("Invalid tuple to delete: no corresponding page");
+        page.deleteTuple(t);
+        Pages.add(page);
+        return Pages;
     }
 
     // see DbFile.java for javadocs

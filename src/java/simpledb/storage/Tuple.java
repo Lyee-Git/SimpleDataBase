@@ -3,6 +3,7 @@ package simpledb.storage;
 import java.io.Serializable;
 import java.util.Arrays;
 import java.util.Iterator;
+import java.util.Objects;
 
 /**
  * Tuple maintains information about the contents of a tuple. Tuples have a
@@ -15,6 +16,24 @@ public class Tuple implements Serializable {
     private final Field[] Fields;
     private TupleDesc tupleDesc;
     private RecordId recordId;
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Tuple tuple = (Tuple) o;
+        return Arrays.equals(Fields, tuple.Fields) &&
+                tupleDesc.equals(tuple.tupleDesc) &&
+                recordId.equals(tuple.recordId);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = Objects.hash(tupleDesc, recordId);
+        result = 31 * result + Arrays.hashCode(Fields);
+        return result;
+    }
+
     /**
      * Create a new tuple with the specified schema (type).
      *

@@ -2,7 +2,6 @@ package simpledb.storage;
 
 import simpledb.common.Database;
 import simpledb.common.DbException;
-import simpledb.common.Debug;
 import simpledb.common.Catalog;
 import simpledb.transaction.TransactionId;
 
@@ -19,11 +18,16 @@ import java.io.*;
  */
 public class HeapPage implements Page {
 
-    final HeapPageId pid;
-    final TupleDesc td;
-    final byte[] header;
-    final Tuple[] tuples;
-    final int numSlots;
+    private final HeapPageId pid;
+    private final TupleDesc td;
+    private final byte[] header;
+    private final Tuple[] tuples;
+    private final int numSlots;
+
+    // flag boolean if the page is dirty
+    private boolean dirty;
+    // The transactionId that changes page to be dirty
+    private TransactionId dirtyId;
 
     byte[] oldData;
     private final Byte oldDataLock= (byte) 0;
@@ -213,6 +217,8 @@ public class HeapPage implements Page {
         }
 
         try {
+            // Flushes this data output stream.
+            // This forces any buffered output bytes to be written out to the stream.
             dos.flush();
         } catch (IOException e) {
             e.printStackTrace();
@@ -243,8 +249,13 @@ public class HeapPage implements Page {
      * @param t The tuple to delete
      */
     public void deleteTuple(Tuple t) throws DbException {
-        // some code goes here
-        // not necessary for lab1
+        int slotId = t.getRecordId().getTupleNumber();
+        if (slotId < 0 || slotId >= numSlots)
+            throw new DbException("tuple out of range");
+        if (tuples[slotId] == null || !isSlotUsed(slotId) || !tuples[slotId].equals(t))
+            throw new DbException("tuple is null, invalid deletion");
+        markSlotUsed(slotId, false);
+        tuples[slotId] = null;
     }
 
     /**
@@ -255,8 +266,18 @@ public class HeapPage implements Page {
      * @param t The tuple to add.
      */
     public void insertTuple(Tuple t) throws DbException {
-        // some code goes here
-        // not necessary for lab1
+        if (t == null || !td.equals(t.getTupleDesc()))
+            throw new IllegalArgumentException("Invalid Tuple to Insert");
+        for (int i = 0; i < numSlots; i++) {
+            if (!isSlotUsed(i)) {
+                RecordId rid = new RecordId(this.pid, i);
+                t.setRecordId(rid);
+                markSlotUsed(i, true);
+                tuples[i] = t;
+                return;
+            }
+        }
+        throw new DbException("No Empty Slot to insert a new tuple");
     }
 
     /**
@@ -264,17 +285,15 @@ public class HeapPage implements Page {
      * that did the dirtying
      */
     public void markDirty(boolean dirty, TransactionId tid) {
-        // some code goes here
-	// not necessary for lab1
+        this.dirty = dirty;
+        this.dirtyId = tid;
     }
 
     /**
      * Returns the tid of the transaction that last dirtied this page, or null if the page is not dirty
      */
     public TransactionId isDirty() {
-        // some code goes here
-	// Not necessary for lab1
-        return null;      
+        return dirty ? dirtyId : null;
     }
 
     /**
@@ -301,8 +320,13 @@ public class HeapPage implements Page {
      * Abstraction to fill or clear a slot on this page.
      */
     private void markSlotUsed(int i, boolean value) {
-        // some code goes here
-        // not necessary for lab1
+        int mask = 1 << (i % 8);
+        if (value) {
+            header[i / 8] |= mask;
+        }
+        else {
+            header[i / 8] &= (~mask);
+        }
     }
 
     /**
