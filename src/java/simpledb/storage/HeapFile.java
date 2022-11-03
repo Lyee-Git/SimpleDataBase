@@ -105,8 +105,30 @@ public class HeapFile implements DbFile {
 
     // see DbFile.java for javadocs
     public void writePage(Page page) throws IOException {
-        // some code goes here
-        // not necessary for lab1
+        int pageSize = BufferPool.getPageSize();
+        int pageNo = page.getId().getPageNumber();
+        int offset = pageSize * pageNo;
+        RandomAccessFile rfile = null;
+        try {
+            rfile = new RandomAccessFile(f, "rws");
+            rfile.seek(offset);
+            byte[] pageData = page.getPageData();
+            rfile.write(pageData);
+        }
+        catch (FileNotFoundException e) {
+            e.printStackTrace();
+            throw new IllegalArgumentException("File Not Found in HeapFile : readPage");
+        }
+        catch (IOException e) {
+            e.printStackTrace();
+        }
+        finally {
+            try {
+                rfile.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
     }
 
     /**
@@ -211,10 +233,9 @@ public class HeapFile implements DbFile {
                 return false;
             if (pageNo >= numPages || pageNo == numPages - 1 && !it.hasNext()) // if end of page && end of tuple
                 return false;
-            if (pageNo < numPages - 1 && !it.hasNext()) {
+            while (pageNo < numPages - 1 && !it.hasNext()) { // use WHILE cause Maybe there exists two consecutive empty pages
                 pageNo++;
                 it = getTupleIterator(pageNo);
-                return it.hasNext();
             }
             return true;
         }

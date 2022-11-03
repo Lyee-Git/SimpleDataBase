@@ -37,7 +37,39 @@ public class BufferPool {
 
     private final int numPages;
 
-    private final HashMap<PageId, Page> idToPage;
+    private final HashMap<PageId, LinkedNode> idToPage;
+
+    private LinkedNode head, tail;
+
+    class LinkedNode {
+        PageId pageId;
+        Page page;
+        LinkedNode prev;
+        LinkedNode next;
+        public LinkedNode() {}
+        public LinkedNode(PageId _pageId, Page _page) {pageId = _pageId; page = _page;}
+    }
+    private void addLast(LinkedNode node) {
+        node.next = tail;
+        node.prev = tail.prev;
+        tail.prev.next = node;
+        tail.prev = node;
+    }
+
+    private void removeNode(LinkedNode node) {
+        node.prev.next = node.next;
+        node.next.prev = node.prev;
+    }
+
+    private void moveToLast(LinkedNode node) {
+        removeNode(node);
+        addLast(node);
+    }
+
+    private LinkedNode getFirst() {
+        LinkedNode res = head.next;
+        return res;
+    }
 
     /**
      * Creates a BufferPool that caches up to numPages pages.
@@ -47,6 +79,12 @@ public class BufferPool {
     public BufferPool(int numPages) {
         this.numPages = numPages;
         this.idToPage = new HashMap<>();
+        head = new LinkedNode(null, null);
+        tail = new LinkedNode(null, null);
+        head.next = tail;
+        head.prev = tail;
+        tail.next = head;
+        tail.prev = head;
     }
     
     public static int getPageSize() {
@@ -86,12 +124,24 @@ public class BufferPool {
                 // read page from disk and load it to BufferPool
                 DbFile df = Database.getCatalog().getDatabaseFile(pid.getTableId());
                 res = df.readPage(pid);
-                idToPage.put(pid, res);
+                LinkedNode node = new LinkedNode(pid, res);
+                addLast(node);
+                idToPage.put(pid, node);
             }
-            else throw new DbException("Lack of Free Pages in Buffer Pool");
+            else {
+                evictPage();
+                DbFile df = Database.getCatalog().getDatabaseFile(pid.getTableId());
+                res = df.readPage(pid);
+                LinkedNode node = new LinkedNode(pid, res);
+                addLast(node);
+                idToPage.put(pid, node);
+            }
         }
-        else
-            res = idToPage.get(pid);
+        else {
+            LinkedNode node = idToPage.get(pid);
+            res = node.page;
+            moveToLast(node);
+        }
         return res;
     }
 
@@ -161,7 +211,20 @@ public class BufferPool {
         // Handle dirty pages: Cache them in BufferPool
         for (Page page : Pages) {
             page.markDirty(true, tid);
-            this.idToPage.put(page.getId(), page);
+            PageId pid = page.getId();
+            if (idToPage.containsKey(pid)) {
+                LinkedNode node = idToPage.get(pid);
+                node.page = page;
+                moveToLast(node);
+            }
+            else {
+                LinkedNode node = new LinkedNode(pid, page);
+                if (idToPage.size() >= numPages) {
+                    evictPage();
+                }
+                addLast(node);
+                idToPage.put(pid, node);
+            }
         }
     }
 
@@ -186,7 +249,20 @@ public class BufferPool {
         // Handle dirty pages: Cache them in BufferPool
         for (Page page : Pages) {
             page.markDirty(true, tid);
-            this.idToPage.put(page.getId(), page);
+            PageId pid = page.getId();
+            if (idToPage.containsKey(pid)) {
+                LinkedNode node = idToPage.get(pid);
+                node.page = page;
+                moveToLast(node);
+            }
+            else {
+                LinkedNode node = new LinkedNode(pid, page);
+                if (idToPage.size() >= numPages) {
+                    evictPage();
+                }
+                addLast(node);
+                idToPage.put(pid, node);
+            }
         }
     }
 
@@ -196,9 +272,10 @@ public class BufferPool {
      *     break simpledb if running in NO STEAL mode.
      */
     public synchronized void flushAllPages() throws IOException {
-        // some code goes here
-        // not necessary for lab1
-
+        for (LinkedNode node : idToPage.values()) {
+            if (node.page.isDirty() != null)
+                flushPage(node.page.getId());
+        }
     }
 
     /** Remove the specific page id from the buffer pool.
@@ -210,17 +287,25 @@ public class BufferPool {
         are removed from the cache so they can be reused safely
     */
     public synchronized void discardPage(PageId pid) {
-        // some code goes here
-        // not necessary for lab1
+        if (!idToPage.containsKey(pid))
+            throw new IllegalArgumentException("page to remove doesn't exist");
+        LinkedNode node = idToPage.get(pid);
+        removeNode(node);
+        idToPage.remove(node.pageId);
     }
 
     /**
      * Flushes a certain page to disk
      * @param pid an ID indicating the page to flush
      */
-    private synchronized  void flushPage(PageId pid) throws IOException {
-        // some code goes here
-        // not necessary for lab1
+    private synchronized void flushPage(PageId pid) throws IOException {
+        if (!idToPage.containsKey(pid))
+            throw new IllegalArgumentException("page to flush doesn't exist");
+        DbFile dbFile = Database.getCatalog().getDatabaseFile(pid.getTableId());
+        Page page = idToPage.get(pid).page;
+        if (page.isDirty() != null) {
+            dbFile.writePage(page);
+        }
     }
 
     /** Write all pages of the specified transaction to disk.
@@ -235,8 +320,16 @@ public class BufferPool {
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
     private synchronized  void evictPage() throws DbException {
-        // some code goes here
-        // not necessary for lab1
+        if (idToPage.size() == 0)
+            return;
+        LinkedNode node = getFirst();
+        PageId pid = node.pageId;
+        try {
+            flushPage(pid);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        discardPage(pid);
     }
 
 }
