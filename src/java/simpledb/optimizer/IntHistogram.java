@@ -64,6 +64,8 @@ public class IntHistogram {
         int valueIndex = Math.min((int) ((v - min) / width), this.buckets.length - 1);
         switch (op) {
             case EQUALS:
+                if (v > max || v < min)
+                    return 0;
                 int height = buckets[valueIndex];
                 return 1.0 * height / width / numTuples;
             case GREATER_THAN:
