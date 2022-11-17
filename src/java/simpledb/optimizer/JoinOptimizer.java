@@ -1,5 +1,6 @@
 package simpledb.optimizer;
 
+import net.sf.antcontrib.design.Log;
 import simpledb.common.Database;
 import simpledb.ParsingException;
 import simpledb.execution.*;
@@ -126,11 +127,7 @@ public class JoinOptimizer {
             // You do not need to implement proper support for these for Lab 3.
             return card1 + cost1 + cost2;
         } else {
-            // Insert your code here.
-            // HINT: You may need to use the variable "j" if you implemented
-            // a join algorithm that's more complicated than a basic
-            // nested-loops join.
-            return -1.0;
+            return cost1 + card1 * cost2 + card1 * card2;
         }
     }
 
@@ -174,9 +171,24 @@ public class JoinOptimizer {
                                                    String field2PureName, int card1, int card2, boolean t1pkey,
                                                    boolean t2pkey, Map<String, TableStats> stats,
                                                    Map<String, Integer> tableAliasToId) {
-        int card = 1;
-        // some code goes here
-        return card <= 0 ? 1 : card;
+        switch (joinOp) {
+            case EQUALS -> {
+                if (t1pkey && !t2pkey)
+                    return card2;
+                else if (!t1pkey && t2pkey)
+                    return card1;
+                else if (t1pkey && t2pkey)
+                    return Math.min(card1, card2);
+                else return Math.max(card1, card2);
+            }
+            case NOT_EQUALS -> {
+                return card1 * card2 - estimateTableJoinCardinality(Predicate.Op.EQUALS, table1Alias,
+                        table2Alias, field1PureName, field2PureName, card1, card2, t1pkey, t2pkey, stats, tableAliasToId);
+            }
+            default -> {
+                return (int) (card1 * card2 * 0.3);
+            }
+        }
     }
 
     /**
@@ -191,24 +203,22 @@ public class JoinOptimizer {
      */
     public <T> Set<Set<T>> enumerateSubsets(List<T> v, int size) {
         Set<Set<T>> els = new HashSet<>();
-        els.add(new HashSet<>());
-        // Iterator<Set> it;
-        // long start = System.currentTimeMillis();
-
-        for (int i = 0; i < size; i++) {
-            Set<Set<T>> newels = new HashSet<>();
-            for (Set<T> s : els) {
-                for (T t : v) {
-                    Set<T> news = new HashSet<>(s);
-                    if (news.add(t))
-                        newels.add(news);
-                }
-            }
-            els = newels;
-        }
-
+        DFS(v, size, 0, els, new ArrayDeque<>());
         return els;
+    }
 
+   public <T> void DFS(List<T> v, int size, int pos, Set<Set<T>> els, Deque<T> s) {
+        if (pos > v.size())
+            return;
+        if (s.size() == size) {
+            els.add(new HashSet<>(s));
+            return;
+        }
+        for (int i = pos; i < v.size(); i++) {
+            s.addLast(v.get(i));
+            DFS(v, size, i + 1, els, s);
+            s.removeLast();
+        }
     }
 
     /**
@@ -235,10 +245,29 @@ public class JoinOptimizer {
             Map<String, TableStats> stats,
             Map<String, Double> filterSelectivities, boolean explain)
             throws ParsingException {
-
-        // some code goes here
-        //Replace the following
-        return joins;
+        PlanCache planCache = new PlanCache();
+        CostCard bestCostCard = new CostCard();
+        for (int i = 1; i <= joins.size(); i++) {
+            Set<Set<LogicalJoinNode>> subsets = enumerateSubsets(joins, i);
+            for (Set<LogicalJoinNode> subset : subsets) {
+                bestCostCard = new CostCard();
+                double bestCostSoFar = Double.MAX_VALUE;
+                for (LogicalJoinNode j : subset) {
+                    CostCard cc = computeCostAndCardOfSubplan(stats, filterSelectivities, j, subset, bestCostSoFar, planCache);
+                    if (cc != null) {
+                        bestCostSoFar = cc.cost;
+                        bestCostCard = cc;
+                    }
+                }
+                // For every specific subset, find best cost and add it to plancache
+                if (bestCostSoFar != Double.MAX_VALUE) {
+                    planCache.addPlan(subset, bestCostSoFar, bestCostCard.card, bestCostCard.plan);
+                }
+            }
+        }
+        if (explain)
+            printJoins(bestCostCard.plan, planCache, stats, filterSelectivities);
+        return bestCostCard.plan;
     }
 
     // ===================== Private Methods =================================
